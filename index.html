@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>RETRO BLACKJACK • MULTIPLAYER</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&amp;display=swap');
+  
+  body {
+    margin: 0;
+    padding: 20px;
+    background: #1a1a2e;
+    color: #fff;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 14px;
+  }
+  
+  .container {
+    max-width: 1100px;
+    margin: auto;
+  }
+  
+  h1 {
+    color: #ffd700;
+    text-shadow: 4px 4px #000;
+    text-align: center;
+    margin-bottom: 10px;
+  }
+  
+  .room-controls {
+    background: #222;
+    padding: 20px;
+    border: 4px solid #3a2f1f;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+  
+  input {
+    font-family: inherit;
+    padding: 10px;
+    margin: 5px;
+    background: #111;
+    color: #fff;
+    border: 3px solid #3a2f1f;
+  }
+  
+  button {
+    font-family: inherit;
+    padding: 10px 20px;
+    border: 3px solid #fff;
+    background: #222;
+    color: #0f0;
+    cursor: pointer;
+    margin: 5px;
+  }
+  
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  .table {
+    background: #0a5c0a;
+    border: 8px solid #3a2f1f;
+    padding: 25px;
+    margin-bottom: 20px;
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.6);
+  }
+  
+  .player-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 15px;
+  }
+  
+  .player-panel {
+    background: #222;
+    border: 4px solid #3a2f1f;
+    padding: 12px;
+  }
+  
+  .player-panel.active {
+    border-color: #0f0;
+    box-shadow: 0 0 12px #0f0;
+  }
+  
+  .card {
+    width: 62px;
+    height: 90px;
+    background: #fff;
+    border: 3px solid #111;
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 5px;
+    font-size: 13px;
+    margin: 4px;
+    box-shadow: 3px 3px #000;
+    color: #111;
+  }
+  
+  .card.face-down {
+    background: linear-gradient(135deg, #4a0000, #220000);
+    color: #ffd700;
+    justify-content: center;
+    align-items: center;
+    font-size: 28px;
+  }
+  
+  .status {
+    font-size: 11px;
+    color: #ffd700;
+    margin: 6px 0;
+  }
+  
+  #message {
+    color: #ffd700;
+    min-height: 35px;
+    text-align: center;
+    font-size: 15px;
+  }
+  
+  .actions {
+    text-align: center;
+    margin-top: 15px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>BLACKJACK</h1>
+  <div class="subtitle" style="text-align:center;color:#0f0;margin-bottom:15px;">RETRO MULTIPLAYER CASINO</div>
+
+  <!-- Room Controls -->
+  <div class="room-controls">
+    <input id="playerName" placeholder="Dein Name" value="Spieler1" style="width:180px;">
+    <input id="roomCode" placeholder="Raum-Code (z.B. ABC123)" style="width:180px;">
+    <br>
+    <button onclick="createRoom()">Raum erstellen</button>
+    <button onclick="joinRoom()">Raum beitreten</button>
+    <div id="roomInfo" style="margin-top:12px;color:#ffd700;font-size:13px;"></div>
+  </div>
+
+  <!-- Game Area -->
+  <div id="gameArea" style="display:none;">
+    <div class="table">
+      <!-- Dealer -->
+      <div style="text-align:center; margin-bottom:25px;">
+        <div style="color:#ffd700; font-size:16px; margin-bottom:8px;">DEALER</div>
+        <div id="dealer-cards" style="min-height:100px;"></div>
+        <div id="dealer-score" style="font-size:24px; color:#fff; margin-top:8px;"></div>
+      </div>
+
+      <!-- Players -->
+      <div class="player-grid" id="players-container"></div>
+    </div>
+
+    <div id="message"></div>
+
+    <div class="actions">
+      <button onclick="sendAction('hit')" id="hit-btn" disabled>HIT</button>
+      <button onclick="sendAction('stand')" id="stand-btn" disabled>STAND</button>
+      <button onclick="sendAction('double')" id="double-btn" disabled>DOUBLE</button>
+      <button onclick="sendAction('split')" id="split-btn" disabled>SPLIT</button>
+      <br>
+      <button onclick="startRound()" id="start-btn" style="display:none; margin-top:12px;">RUNDE STARTEN</button>
+      <button onclick="newRound()" id="new-round-btn" style="display:none; margin-top:12px;">NEUE RUNDE</button>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+// ==================== CLIENT ====================
+const socket = io();
+let currentRoom = null;
+let myId = null;
+let gameState = null;
+
+function createRoom() {
+  const name = document.getElementById('playerName').value.trim() || 'Spieler';
+  const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+  document.getElementById('roomCode').value = code;
+  socket.emit('joinRoom', { roomCode: code, playerName: name });
+}
+
+function joinRoom() {
+  const name = document.getElementById('playerName').value.trim() || 'Spieler';
+  const code = document.getElementById('roomCode').value.trim().toUpperCase();
+  if (!code) return alert('Bitte Raum-Code eingeben!');
+  socket.emit('joinRoom', { roomCode: code, playerName: name });
+}
+
+socket.on('joined', (data) => {
+  currentRoom = data.roomCode;
+  myId = data.playerId;
+  document.getElementById('gameArea').style.display = 'block';
+  document.getElementById('roomInfo').innerHTML = 
+    `Raum: <strong>${currentRoom}</strong> &nbsp;|&nbsp; Verbunden als <strong>${document.getElementById('playerName').value}</strong>`;
+});
+
+socket.on('gameState', (state) => {
+  gameState = state;
+  renderGame();
+});
+
+socket.on('error', (msg) => {
+  alert(msg);
+});
+
+function renderGame() {
+  if (!gameState) return;
+
+  // Dealer
+  const dealerCardsEl = document.getElementById('dealer-cards');
+  dealerCardsEl.innerHTML = gameState.dealerHand.map((card, i) => 
+    createCardHTML(card, gameState.phase === 'playing' && i === 1)
+  ).join('');
+
+  document.getElementById('dealer-score').textContent = 
+    (gameState.phase === 'playing') ? '?' : calculateScore(gameState.dealerHand);
+
+  // Players
+  const container = document.getElementById('players-container');
+  container.innerHTML = '';
+
+  gameState.players.forEach((player, index) => {
+    const isMe = player.id === myId;
+    const isActive = gameState.phase === 'playing' && index === gameState.currentPlayerIndex;
+
+    const div = document.createElement('div');
+    div.className = `player-panel ${isActive ? 'active' : ''}`;
+    
+    let html = `
+      <strong>${player.name} ${isMe ? '★' : ''}</strong><br>
+      <span style="color:#ffd700">💰 ${player.bankroll}</span> &nbsp; Bet: ${player.bet}<br>
+      <div class="status">${player.status.toUpperCase()}</div>
+      <div style="margin:8px 0; min-height:95px;">
+        ${player.hand.map(c => createCardHTML(c)).join('')}
+      </div>
+    `;
+    
+    if (player.splitHand) {
+      html += `<div style="margin-top:6px; font-size:12px;">Split Hand:<br>${player.splitHand.map(c => createCardHTML(c)).join('')}</div>`;
+    }
+    
+    div.innerHTML = html;
+    container.appendChild(div);
+  });
+
+  // Action buttons
+  const isMyTurn = gameState.phase === 'playing' && 
+                   gameState.players[gameState.currentPlayerIndex]?.id === myId;
+
+  document.getElementById('hit-btn').disabled = !isMyTurn;
+  document.getElementById('stand-btn').disabled = !isMyTurn;
+  document.getElementById('double-btn').disabled = !isMyTurn;
+  document.getElementById('split-btn').disabled = !isMyTurn;
+
+  // Start / New Round buttons
+  const allHaveBet = gameState.players.every(p => p.bet > 0);
+  document.getElementById('start-btn').style.display = 
+    (gameState.phase === 'betting' && allHaveBet && gameState.players.length >= 2) ? 'inline-block' : 'none';
+  
+  document.getElementById('new-round-btn').style.display = 
+    (gameState.phase === 'resolve') ? 'inline-block' : 'none';
+
+  // Message
+  let msg = '';
+  if (gameState.phase === 'betting') msg = 'Setze deinen Einsatz und warte auf Start';
+  else if (gameState.phase === 'playing' && isMyTurn) msg = 'DEIN ZUG!';
+  else if (gameState.phase === 'playing') msg = `Warte auf ${gameState.players[gameState.currentPlayerIndex]?.name}`;
+  else if (gameState.phase === 'resolve') msg = 'Runde beendet – Ergebnisse oben';
+  
+  document.getElementById('message').textContent = msg;
+}
+
+function createCardHTML(card, faceDown = false) {
+  if (faceDown) return `<div class="card face-down">♠</div>`;
+  const isRed = card.suit === '♥' || card.suit === '♦';
+  const color = isRed ? '#c00' : '#111';
+  return `
+    <div class="card" style="color:${color}">
+      <div>${card.value}${card.suit}</div>
+      <div style="text-align:right; transform:rotate(180deg);">${card.value}${card.suit}</div>
+    </div>
+  `;
+}
+
+function calculateScore(hand) {
+  if (!hand || hand.length === 0) return 0;
+  let total = 0, aces = 0;
+  for (const card of hand) {
+    if (card.value === 'A') { total += 11; aces++; }
+    else if (['J','Q','K'].includes(card.value)) total += 10;
+    else total += parseInt(card.value);
+  }
+  while (total > 21 && aces > 0) { total -= 10; aces--; }
+  return total;
+}
+
+function sendAction(action) {
+  if (!currentRoom) return;
+  socket.emit('playerAction', { roomCode: currentRoom, action });
+}
+
+function startRound() {
+  if (!currentRoom) return;
+  socket.emit('startRound', { roomCode: currentRoom });
+}
+
+function newRound() {
+  if (!currentRoom) return;
+  socket.emit('newRound', { roomCode: currentRoom });
+}
+
+// Quick bet buttons (optional enhancement)
+window.placeBet = function(amount) {
+  if (!currentRoom || !gameState || gameState.phase !== 'betting') return;
+  socket.emit('placeBet', { roomCode: currentRoom, amount });
+};
+</script>
+</body>
+</html>
